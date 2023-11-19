@@ -1,89 +1,136 @@
 # Визначення функцій, які виконують різні операції з базою даних
 
-from models import Goods, Clients, Orders
-from sqlalchemy import func
+from models import Users, Bugs, Comments
+from sqlalchemy import func, case
 
 
-# Функція для створення нового товару
-def create_goods(session, name, price):
-    new_goods = Goods(name=name, price=price)
-    session.add(new_goods)
+# Функція для створення нового об'єкта
+def create(session, model):
+    session.add(model)
     session.commit()
 
 
-# Функція для додавання нового клієнта
-def create_clients(session, name, email):
-    new_clients = Clients(name=name, email=email)
-    session.add(new_clients)
-    session.commit()
-
-
-# Функція для додавання нового замовлення
-def create_orders(session, client_id, goods_id, quantity):
-    new_orders = Orders(client_id=client_id, goods_id=goods_id, quantity=quantity)
-    session.add(new_orders)
-    session.commit()
-
-
-# Функція для отримання всіх товарів
-def get_all_goods(session):
-    return session.query(Goods).all()
-
-
-# Функція для оновлення інформації про товар
-def update_goods(session, goods_id, new_name, new_price):
-    goods_to_update = session.query(Goods).filter_by(id=goods_id).first()
-    if goods_to_update:
-        goods_to_update.name = new_name
-        goods_to_update.price = new_price
+# Функція для оновлення об'єкта
+def update(session, model, row_id, **kwargs):
+    object_to_update = session.query(model).filter_by(id=row_id).first()
+    if object_to_update:
+        for key, value in kwargs.items():
+            setattr(object_to_update, key, value)
         session.commit()
+    return object_to_update
 
 
-# Функція для видалення товару
-def delete_goods(session, goods_id):
-    goods_to_delete = session.query(Goods).filter_by(id=goods_id).first()
-    if goods_to_delete:
-        session.delete(goods_to_delete)
+# Функція для видалення об'єкта
+def delete(session, model, id):
+    object_to_delete = session.query(model).filter_by(id=id).first()
+    if object_to_delete:
+        session.delete(object_to_delete)
         session.commit()
+    return object_to_delete
 
 
-# Функція для отримання деталей замовлення (ім'я клієнта, назва товару та кількість)
-def get_order_details(session):
-    return session.query(Clients.name, Goods.name, Orders.quantity).\
-        join(Orders, Clients.id == Orders.client_id).\
-        join(Goods, Goods.id == Orders.goods_id).all()
+# Користувачі
+
+# створення нового користувача
+def create_user(session, username, password, email, full_name=None, role='user'):
+    new_user = Users(username=username, password=password, full_name=full_name, email=email, role=role)
+    create(session, new_user)
 
 
-# Функція для отримання деталей замовлення за заданим клієнтом по спаданню кількості (ім'я клієнта, назва товару та кількість)
-def get_order_details_filtered(session, client_name=None, descending_order=True):
-    query = session.query(Clients.name, Goods.name, Orders.quantity).\
-        join(Orders, Clients.id == Orders.client_id).\
-        join(Goods, Goods.id == Orders.goods_id)
-
-    if client_name:
-        query = query.filter(Clients.name == client_name)
-
-    if descending_order:
-        query = query.order_by(Orders.quantity.desc())
-
-    return query.all()
+# користувачі з роллю
+def get_users_by_role(session, role):
+    return session.query(Users).where(Users.role == role).all()
 
 
-# Функція для вибірки кількості замовлень для кожного клієнта
-def order_count_per_client(session):
-    return session.query(Clients.name, func.count(Orders.id).label('order_count')).\
-        outerjoin(Orders, Clients.id == Orders.client_id).\
-        group_by(Clients.id).all()
+# вибір користувача по id
+def get_user_by_id(session, user_id):
+    return session.query(Users).where(Users.id == user_id).first()
 
 
-# Функція для вибірки суми кількості товарів для кожного клієнта
-def total_quantity_per_client(session):
-    return session.query(Clients.name, func.sum(Orders.quantity).label('total_quantity')).\
-        outerjoin(Orders, Clients.id == Orders.client_id).\
-        group_by(Clients.id).all()
+# пошук по юзернейму
+def get_users_by_username(session, username):
+    return session.query(Users).where(Users.username.like(f'%{username}%')).all()
 
 
-# Функція для вибірки середньої ціни товару
-def average_price_of_goods(session):
-    return session.query(func.avg(Goods.price).label('average_price')).scalar()
+# Функція для видалення користувача
+def delete_user(session, user_id):
+    return delete(session, Users, user_id)
 
+
+# Баг-репорти
+
+# створення нового баг-репорту
+def create_bug(session, title, created_by, description=None, status=None, priority=None, assigned_to=None):
+    new_bug = Bugs(title=title, description=description, status=status, priority=priority,
+                   created_by=created_by, assigned_to=assigned_to)
+    create(session, new_bug)
+
+
+# Функція для отримання всіх баг-репортів
+def get_all_bugs(session):
+    return session.query(Bugs).all()
+
+
+# отримання баг-репорту по id
+def get_bug_by_id(session, bug_id):
+    return session.query(Bugs).where(Bugs.id == bug_id).first()
+
+
+# всі незакриті баг-репорти
+def get_not_closed_bugs(session):
+    return session.query(Bugs)\
+            .filter((Bugs.status != 'WONTFIX') & (Bugs.status != 'RESOLVED'))\
+            .order_by(
+                case(
+                    (Bugs.priority == 'HIGH', 1),
+                    (Bugs.priority == 'MEDIUM', 2),
+                    (Bugs.priority == 'LOW', 3),
+                    else_=4
+                ).asc()
+            ).all()
+
+
+# оновлення баг-репорту
+def update_bug(session, bug_id, title=None, description=None, 
+               status=None, priority=None, assigned_to=None, is_open=None):
+    values_to_update = {}
+    for key, value in locals().items():
+        if value != None and key != 'session' and key != 'bug_id':
+            values_to_update[key] = value
+    print(values_to_update)
+    return update(session, Bugs, bug_id, **values_to_update)
+
+
+# Функція для видалення баг-репорту
+def delete_bug(session, bug_id):
+    return delete(session, Bugs, bug_id)
+
+
+# Коментарі
+
+# створення нового коментаря
+def create_comment(session, bug_id, created_by, comment):
+    new_comment = Comments(bug_id=bug_id, created_by=created_by, comment=comment)
+    create(session, new_comment)
+
+
+# пошук всіх коментарів, що відповідають баг-репорту
+def get_all_comments_in_bug(session, bug_id):
+    return session.query(Comments)\
+        .where(Comments.bug_id == bug_id)\
+        .order_by(Comments.created_at.asc()).all()
+
+
+# пошук конкретного коментаря
+def get_comment_by_id(session, comment_id):
+    return session.query(Comments).where(Comments.id == comment_id).first()
+
+
+# оновлення коментаря
+def update_comment(session, comment_id, comment):
+    return update(session, Comments, comment_id, comment=comment)
+
+
+# Функція для видалення коментаря
+def delete_comment(session, comment_id):
+    return delete(session, Comments, comment_id)
